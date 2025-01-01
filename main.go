@@ -13,7 +13,7 @@ import (
 
 var (
 	logLevel        = flag.String("log-level", "info", "Log Level")
-	transmissionURL = flag.String("transmission-url", "http://user:password@localhost:9091", "URL of Transmission Server")
+	transmissionURL = flag.String("transmission-url", "", "URL of Transmission Server, in a format like: 'https://user:password@localhost:9091'")
 	completeRatio   = flag.Int64("ratio", 2, "Required ratio before a finished torrent will be deleted")
 )
 
@@ -40,8 +40,12 @@ func main() {
 		})))
 
 	endpoint, err := url.Parse(fmt.Sprintf("%s/transmission/rpc", *transmissionURL))
-	if err != nil {
-		slog.Error("Error parsing Transmission URL", "url", endpoint, "err", err)
+	if err != nil || *transmissionURL == "" {
+		slog.Error("Error parsing Transmission URL",
+			"err", err,
+			"transmission-url", *transmissionURL,
+			"parsedUrl", endpoint,
+		)
 		os.Exit(1)
 	}
 	tbt, err := transmissionrpc.New(endpoint, nil)
@@ -59,7 +63,7 @@ func main() {
 		)
 		os.Exit(1)
 	}
-	slog.Info("Transmission Versions",
+	slog.Debug("Transmission Versions",
 		"serverVersion", serverVersion,
 		"serverMinVersion", serverMinVersion,
 	)
