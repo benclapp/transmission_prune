@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"time"
 
 	"github.com/hekmon/transmissionrpc/v3"
 )
@@ -15,6 +16,8 @@ var (
 	logLevel        = flag.String("log-level", "info", "Log Level")
 	transmissionURL = flag.String("transmission-url", "", "URL of Transmission Server, in a format like: 'https://user:password@localhost:9091'")
 	completeRatio   = flag.Int64("ratio", 2, "Required ratio before a finished torrent will be deleted")
+	wait            = flag.Bool("wait", false, "Run continuously and check for completed on a loop")
+	interval        = flag.Duration("interval", time.Minute*5, "Interval to check for completed torrents if `-wait` is enabled")
 )
 
 func main() {
@@ -38,6 +41,13 @@ func main() {
 			AddSource: true,
 			Level:     ll,
 		})))
+	slog.Info("Starting Transmission Prune",
+		"log-level", *logLevel,
+		"transmission-url", *transmissionURL,
+		"ratio", *completeRatio,
+		"wait", *wait,
+		"interval", *interval,
+	)
 
 	endpoint, err := url.Parse(fmt.Sprintf("%s/transmission/rpc", *transmissionURL))
 	if err != nil || *transmissionURL == "" {
@@ -68,9 +78,22 @@ func main() {
 		"serverMinVersion", serverMinVersion,
 	)
 
-	torrents, err := tbt.TorrentGetAll(ctx)
+	deleteCompleted(ctx, tbt)
+	if !*wait {
+		os.Exit(0)
+	}
+
+	t := time.Tick(*interval)
+	for _ = range t {
+		deleteCompleted(ctx, tbt)
+	}
+}
+
+func deleteCompleted(ctx context.Context, t *transmissionrpc.Client) {
+	torrents, err := t.TorrentGetAll(ctx)
 	if err != nil {
 		slog.Error("Error getting all torrents", "err", err)
+		return
 	}
 
 	removeIDs := []int64{}
@@ -103,16 +126,16 @@ func main() {
 	}
 
 	if len(removeIDs) <= 0 {
-		slog.Info("No completed torrents, exiting", "IDs", removeIDs)
-		os.Exit(0)
+		slog.Info("No completed torrents", "IDs", removeIDs)
+		return
 	}
 
 	slog.Info("Torrent IDs to remove", "IDs", removeIDs, "count", len(removeIDs))
-	err = tbt.TorrentRemove(ctx, transmissionrpc.TorrentRemovePayload{
+	err = t.TorrentRemove(ctx, transmissionrpc.TorrentRemovePayload{
 		IDs:             removeIDs,
 		DeleteLocalData: true,
 	})
 	if err != nil {
-		slog.Error("Error removing finished torrents", "err", err)
+		slog.Error("Error removing finished torrents", "err", err, "removeIDs", removeIDs)
 	}
 }
