@@ -17,7 +17,7 @@ var (
 	transmissionURL = flag.String("transmission-url", "", "URL of Transmission Server, in a format like: 'https://user:password@localhost:9091'")
 	completeRatio   = flag.Int64("ratio", 2, "Required ratio before a finished torrent will be deleted")
 	wait            = flag.Bool("wait", false, "Run continuously and check for completed on a loop")
-	interval        = flag.Duration("interval", time.Minute*5, "Interval to check for completed torrents if `-wait` is enabled")
+	interval        = flag.Duration("interval", time.Minute*5, "Interval to check for completed torrents if '-wait' is enabled")
 )
 
 func main() {
