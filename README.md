@@ -7,6 +7,8 @@ Transmission Prune is a little tool that can be run to prune finished Transmissi
 Configuration via command line arguments.
 
 ```
+  -ignore-list string
+        Comma seperated list. If a torrent contains a case sensitive string provided, it will not be pruned
   -interval duration
         Interval to check for completed torrents if '-wait' is enabled (default 5m0s)
   -log-level string

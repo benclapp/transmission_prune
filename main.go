@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/hekmon/transmissionrpc/v3"
@@ -18,6 +19,7 @@ var (
 	completeRatio   = flag.Int64("ratio", 2, "Required ratio before a finished torrent will be deleted")
 	wait            = flag.Bool("wait", false, "Run continuously and check for completed on a loop")
 	interval        = flag.Duration("interval", time.Minute*5, "Interval to check for completed torrents if '-wait' is enabled")
+	ignoreList      = flag.String("ignore-list", "", "Comma seperated list. If a torrent contains a case sensitive string provided, it will not be pruned")
 )
 
 func main() {
@@ -41,12 +43,15 @@ func main() {
 			AddSource: true,
 			Level:     ll,
 		})))
+
+	ignoredTorrents := strings.Split(*ignoreList, ",")
 	slog.Info("Starting Transmission Prune",
 		"log-level", *logLevel,
 		"transmission-url", *transmissionURL,
 		"ratio", *completeRatio,
 		"wait", *wait,
 		"interval", *interval,
+		"ignore-list", ignoredTorrents,
 	)
 
 	endpoint, err := url.Parse(fmt.Sprintf("%s/transmission/rpc", *transmissionURL))
@@ -78,18 +83,18 @@ func main() {
 		"serverMinVersion", serverMinVersion,
 	)
 
-	deleteCompleted(ctx, tbt)
+	deleteCompleted(ctx, tbt, ignoredTorrents)
 	if !*wait {
 		os.Exit(0)
 	}
 
 	t := time.Tick(*interval)
 	for _ = range t {
-		deleteCompleted(ctx, tbt)
+		deleteCompleted(ctx, tbt, ignoredTorrents)
 	}
 }
 
-func deleteCompleted(ctx context.Context, t *transmissionrpc.Client) {
+func deleteCompleted(ctx context.Context, t *transmissionrpc.Client, ignoreTorrents []string) {
 	torrents, err := t.TorrentGetAll(ctx)
 	if err != nil {
 		slog.Error("Error getting all torrents", "err", err)
@@ -99,17 +104,21 @@ func deleteCompleted(ctx context.Context, t *transmissionrpc.Client) {
 	removeIDs := []int64{}
 
 	for _, torrent := range torrents {
-		if torrent.IsFinished == nil && !*torrent.IsFinished {
-			continue
-		}
-
-		if *torrent.DownloadedEver == 0 {
+		if *torrent.PercentDone < 1 {
 			continue
 		}
 
 		ratio := *torrent.UploadedEver / *torrent.DownloadedEver
 
 		if ratio < *completeRatio {
+			continue
+		}
+
+		if shouldIgnore(*torrent.Name, ignoreTorrents) {
+			slog.Info("Ignoring torrent",
+				"name", *torrent.Name,
+				"ratio", ratio,
+			)
 			continue
 		}
 
@@ -138,4 +147,13 @@ func deleteCompleted(ctx context.Context, t *transmissionrpc.Client) {
 	if err != nil {
 		slog.Error("Error removing finished torrents", "err", err, "removeIDs", removeIDs)
 	}
+}
+
+func shouldIgnore(name string, ignoreTorrents []string) bool {
+	for _, s := range ignoreTorrents {
+		if strings.Contains(name, s) {
+			return true
+		}
+	}
+	return false
 }
